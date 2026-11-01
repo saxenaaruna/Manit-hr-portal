@@ -1,0 +1,41 @@
+{
+  "summary": "Ran one lightweight pass over the iteration 2 features. Backend: 12 pytest cases in test_iter2_features.py covering password login (httpOnly cookie, wrong password, 5-failure lockout), change-password and revert, the 3 AI models with a real chat reply from gpt, gemini and claude, KB file upload via object storage (type check, 401 when the entry is unpublished, 200 once published, 404 after the file is removed), Jev lead status suggestion (Hot and Cold), Jev request screening (urgency, junk, sort) and chat interest gating. 11 passed on the first run. The one failure came from my test data: it used TEST-prefixed names, and Jev rated that request 0.8 junk. With realistic data it passed (junk 0.13, urgency critical). I also called jev.classify_interest directly: general question = ambiguous 0.38, explicit hiring = explicit_interest 1.0. Frontend (Playwright, 1920x1080): admin login (error message, then dashboard), switching the AI model, change password and revert, attaching a PDF in KB and opening the link (200), resource-file-link on the public portal, AI Suggestion column filling after a remarks edit (Hot 98%), Apply with confirm changing status to Hot, urgency and junk badges on the visits and calls pages, and the sort-urgency toggle. All passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "CORS middleware", "issue": "CORS_ORIGINS=\"*\" with allow_credentials=True. The auth playbook asks for explicit origins when credentials are allowed. Set CORS_ORIGINS to the frontend URL."},
+      {"endpoint": "run_action register_interest", "issue": "If Jev is down (label None), the lead is made Hot with no check. This fails open. Consider keeping it Warm or using a keyword check instead."},
+      {"endpoint": "/api/auth/change-password", "issue": "The body is a plain dict, not a Pydantic model (input-validation guideline)."},
+      {"endpoint": "PATCH /api/admin/leads/{id}", "issue": "Jev suggest_status is awaited inside the request when remarks change, so saving remarks takes about 2-5 s. Consider running it as a background task, as screening already does."},
+      {"endpoint": "Jev screen_request", "issue": "TEST-prefixed or placeholder-looking names are flagged junk (>=0.8) even with a real-looking domain. The behaviour makes sense, but the threshold is inclusive and borderline."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Settings", "issues": ["The subtitle still reads 'Gmail & Google Calendar integration for the official account' but the page now also has the AI model and password cards."]},
+      {"screen": "Dashboard", "issues": ["Greets 'Welcome, Test Admin' because it uses the name of the seeded test session user. Fine for testing only."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter2_features.py", "/app/test_reports/pytest/iter2_results.xml"],
+  "action_items": [
+    "Optional: set CORS_ORIGINS to an explicit frontend origin.",
+    "Optional: decide what should happen when Jev is unavailable during chat interest gating (it currently fails open to Hot).",
+    "Optional: move the lead suggest_status call to a background task.",
+    "Optional: update the Settings page subtitle."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1440 lines and should be split into routers (auth, files, leads, requests, chat).",
+    "The seed_admin logic is correct: it inserts the admin only if missing, only sets password_hash when it is absent, and never overwrites an existing password. The hash starts with $2b$.",
+    "Lockout works: 5 failures per ip+email give 429 for 15 min. The counter resets to 0 when the lock is set.",
+    "In the general-question chat test the LLM never emitted a register_interest action, so the Jev gate itself was checked by calling jev.classify_interest directly."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter2_features.py"],
+  "success_rate": {"backend": "100% (12/12 after correcting the test data)", "frontend": "100%"},
+  "test_credentials": "The credentials in /app/memory/test_credentials.md are valid. The password was changed and reverted to Manit@47deznLcnf4, and login was verified afterwards.",
+  "seed_data_creation": "All TEST data and the Jev junk test calls were cleaned up. chat_model was reset to claude.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run with: REACT_APP_BACKEND_URL=... pytest tests/test_iter2_features.py (pytest.ini uses xdist; pass -n0 with -s to see output). Screening test data needs realistic company names, because TEST names get junk-flagged. A JNF KB entry already has a t.pdf attached (created by the main agent). In Playwright, after login wait for a URL matching /admin$ rather than **/admin**, because the latter matches /admin/login straight away."
+}

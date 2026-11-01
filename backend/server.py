@@ -651,7 +651,7 @@ async def update_lead(lead_id: str, body: dict, admin=Depends(get_admin)):
         for k, v in changed.items():
             await log_activity(admin["user_id"], "company_lead", lead_id, f"update:{k}", lead.get(k), v)
         if {"remarks", "recruitment_request"} & changed.keys():
-            await store_status_suggestion(lead_id)
+            asyncio.create_task(store_status_suggestion(lead_id))
     inv = None
     new_status = body.get("interest_status")
     if new_status and new_status != lead["interest_status"]:
@@ -1309,8 +1309,10 @@ async def run_action(act, sid):
                 return "I need your company name, your name and a valid official work email to proceed."
             msgs = [m["content"] for m in await db.chat_messages.find({"session_id": sid, "role": "user"}, NO_ID).sort("ts", 1).to_list(50)]
             label, conf = await jev.classify_interest(msgs)
-            if label is not None and not (label == "explicit_interest" and conf >= 0.6):
+            if not (label == "explicit_interest" and conf >= 0.6):
                 lead, _ = await find_or_create_lead(act)
+                if label is None:
+                    return "Thank you, your details are recorded. Our Training & Placement Cell will review your interest and share the recruitment invitation shortly."
                 return ("Thank you, your details are noted. Would your organization be interested in participating in the "
                         "MANIT Bhopal campus recruitment process for the 2026–27 session?")
             lead, prev = await find_or_create_lead(act, status="Hot")

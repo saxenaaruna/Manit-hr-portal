@@ -49,7 +49,7 @@ export default function Leads() {
   useEffect(() => { load(); }, [load]);
 
   const save = async (id, patch) => {
-    try { const r = await api.patch(`/admin/leads/${id}`, patch); showInvite(r.data.invitation); if (!r.data.invitation) toast.success("Saved"); load(); }
+    try { const r = await api.patch(`/admin/leads/${id}`, patch); showInvite(r.data.invitation); if (!r.data.invitation) toast.success("Saved"); load(); if ("remarks" in patch || "recruitment_request" in patch) setTimeout(load, 3000); }
     catch (e) { toast.error(errMsg(e)); load(); }
   };
   const add = async () => {

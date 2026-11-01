@@ -29,7 +29,7 @@ export default function Settings() {
   if (!s) return null;
   return (
     <div>
-      <PageHead title="Settings" desc="Gmail & Google Calendar integration for the official account." />
+      <PageHead title="Settings" desc="Google integration, MANIT Connect AI model and admin password." />
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="card space-y-3 p-6" data-testid="google-integration-card">
           <p className="font-serif-d text-xl text-[#0B2545]">Google Integration</p>

@@ -19,6 +19,8 @@ Full spec supplied by user (consolidated master build prompt): public HR portal,
 - Public portal, forms, status lookup, chatbot, LinkedIn, resources
 - Admin: dashboard stats, leads spreadsheet (inline edit/search/filter/sort/delete/detail/resend/schedule call), emails (retry/manual), JNF tracking (+URL edit, reminder), visits & calls (approve/reject/propose/reschedule/cancel/complete/notes), calendar (month grid, manual events), KB & resources, templates, activity, Google settings
 - Tested: backend 8/8, frontend pass (chat crash fixed)
+- Iteration 2: email+password admin login (bcrypt, lockout, change password) alongside Google; chatbot model switch Claude/GPT-5.6 Terra/Gemini 3.1 Pro; KB/resource file uploads (Emergent object storage); Jev: chat interest gating (fail-closed), AI Hot/Warm/Cold suggestion, junk flag + urgency on requests. Tested 12/12 backend + frontend.
+- Not built (conflict with spec / defaults): Stripe, Resend/SendGrid (all mail must come from tpwnitb@gmail.com; managed Resend can't send outreach with manit.ac.in links), Twilio SMS, ElevenLabs/TTS/STT, Perplexity, image/video generation
 
 ## Pending configuration
 - GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET (redirect URI env already set for preview; update GOOGLE_REDIRECT_URI for production domain)
