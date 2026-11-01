@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Linkedin, ExternalLink, Phone, Mail, Building, FileText, Menu, X, Search } from "lucide-react";
-import { api, errMsg, LINKS } from "../lib/api";
+import { api, API, errMsg, LINKS } from "../lib/api";
 import ChatWidget from "../components/portal/ChatWidget";
 import RequestForm from "../components/portal/RequestForm";
 
@@ -116,6 +116,9 @@ export default function Portal() {
               <div><p className="font-semibold text-[#0B2545]">{r.title}</p><p className="mt-1 text-sm text-[#64748B]">{r.content}</p></div>
               <ExternalLink className="h-4 w-4 shrink-0 text-[#1D4ED8]" />
             </a>
+          ))}
+          {resources.filter((r) => r.file_id).map((r) => (
+            <a key={`f-${r.id}`} href={`${API}/files/${r.file_id}`} {...ext} className="flex items-center gap-3 p-5 text-sm font-semibold text-[#1D4ED8] hover:bg-[#EFF6FF]" data-testid="resource-file-link"><FileText className="h-4 w-4" />Download: {r.file_name} ({r.title})</a>
           ))}
         </div>
         <p className="mt-4 text-sm text-[#64748B]">Please complete the <a href={jnf} {...ext} className="font-semibold text-[#1D4ED8] hover:underline" data-testid="jnf-inline-link">Job Notification Form (JNF)</a> to begin the recruitment process.</p>

@@ -23,6 +23,17 @@ const Cell = ({ value, onSave, testid, type = "text" }) => {
   return <input className="cell" type={type} value={v} onChange={(e) => setV(e.target.value)} onBlur={() => v !== (value || "") && onSave(v)} onKeyDown={(e) => e.key === "Enter" && e.target.blur()} data-testid={testid} />;
 };
 
+const AiHint = ({ r, onApply, onRefresh }) => {
+  const s = r.ai_status_suggestion;
+  if (!s?.status) return <button className="text-[#1D4ED8] hover:underline" onClick={onRefresh} title="Suggest from remarks & request">Suggest</button>;
+  return (
+    <span className="flex items-center gap-1">
+      <span className={`rounded border px-1.5 ${STATUS_STYLE[s.status]}`}>{s.status} {Math.round(s.confidence * 100)}%</span>
+      {s.status !== r.interest_status && <button className="text-[#1D4ED8] hover:underline" onClick={() => window.confirm(`Change status to ${s.status}?${s.status === "Hot" ? " This sends the invitation email." : ""}`) && onApply(s.status)} data-testid="ai-apply-btn">Apply</button>}
+    </span>
+  );
+};
+
 export default function Leads() {
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState({});
@@ -45,7 +56,8 @@ export default function Leads() {
     try { const r = await api.post("/admin/leads", nw); showInvite(r.data.invitation); toast.success("Company added"); setNw(BLANK); load(); }
     catch (e) { toast.error(errMsg(e)); }
   };
-  const invite = async (id) => { try { showInvite((await api.post(`/admin/leads/${id}/invite`)).data); load(); } catch (e) { toast.error(errMsg(e)); } };
+  const invite = async (id) =>{ try { showInvite((await api.post(`/admin/leads/${id}/invite`)).data); load(); } catch (e) { toast.error(errMsg(e)); } };
+  const suggest = async (id) => { try { const s = (await api.post(`/admin/leads/${id}/suggest-status`)).data; s.status ? toast.info(`AI suggests ${s.status} (${Math.round(s.confidence * 100)}%)`) : toast.error(s.error); load(); } catch (e) { toast.error(errMsg(e)); } };
   const del = async (r) => { if (!window.confirm(`Delete ${r.company_name}? This cannot be undone.`)) return; await api.delete(`/admin/leads/${r.id}`); toast.success("Deleted"); load(); };
 
   const chips = [["", "All", stats.total], ["Hot", "Hot", stats.hot], ["Warm", "Warm", stats.warm], ["Cold", "Cold", stats.cold]];
@@ -72,13 +84,14 @@ export default function Leads() {
       <div className="overflow-x-auto rounded-lg border border-[#D6E4F7] bg-white">
         <table className="sheet w-full min-w-[1400px] border-collapse text-sm" data-testid="leads-table">
           <thead className="bg-[#DBEAFE] text-left text-xs uppercase tracking-wide text-[#123B70]">
-            <tr>{["#", "Company Name", "HR Name", "HR Contact Number", "HR Mail ID", "Status", "Remarks", "Request", "Invitation Status", "JNF Status", "Last Contacted", ""].map((h) => <th key={h} className="px-2 py-2 font-semibold">{h}</th>)}</tr>
+            <tr>{["#", "Company Name", "HR Name", "HR Contact Number", "HR Mail ID", "Status", "AI Suggestion", "Remarks", "Request", "Invitation Status", "JNF Status", "Last Contacted", ""].map((h) => <th key={h} className="px-2 py-2 font-semibold">{h}</th>)}</tr>
           </thead>
           <tbody>
             <tr className="bg-[#EFF6FF]" data-testid="new-lead-row">
               <td className="px-2 text-[#64748B]"><Plus className="h-4 w-4" /></td>
               {["company_name", "hr_name", "contact_number", "work_email"].map((k) => <td key={k}><input className="cell" placeholder={k === "company_name" ? "New company…" : ""} value={nw[k]} onChange={(e) => setNw({ ...nw, [k]: e.target.value })} data-testid={`new-${k}`} /></td>)}
               <td><select className="cell" value={nw.interest_status} onChange={(e) => setNw({ ...nw, interest_status: e.target.value })} data-testid="new-interest_status">{["Hot", "Warm", "Cold"].map((s) => <option key={s}>{s}</option>)}</select></td>
+              <td></td>
               <td><input className="cell" value={nw.remarks} onChange={(e) => setNw({ ...nw, remarks: e.target.value })} data-testid="new-remarks" /></td>
               <td><input className="cell" value={nw.recruitment_request} onChange={(e) => setNw({ ...nw, recruitment_request: e.target.value })} data-testid="new-recruitment_request" /></td>
               <td colSpan={4} className="px-2"><button className="btn-primary py-1" onClick={add} disabled={!nw.company_name.trim()} data-testid="add-lead-btn">Add row</button></td>
@@ -91,6 +104,7 @@ export default function Leads() {
                 <td className="min-w-[130px]"><Cell value={r.contact_number} onSave={(v) => save(r.id, { contact_number: v })} testid={`cell-phone-${i}`} /></td>
                 <td className="min-w-[200px]"><Cell value={r.work_email} onSave={(v) => save(r.id, { work_email: v })} testid={`cell-email-${i}`} /></td>
                 <td className="w-24 px-1"><select className={`cell rounded border font-semibold ${STATUS_STYLE[r.interest_status]}`} value={r.interest_status} onChange={(e) => save(r.id, { interest_status: e.target.value })} data-testid={`cell-status-${i}`}>{["Hot", "Warm", "Cold"].map((s) => <option key={s}>{s}</option>)}</select></td>
+                <td className="min-w-[120px] px-2 text-xs" data-testid={`cell-ai-${i}`}><AiHint r={r} onApply={(s) => save(r.id, { interest_status: s })} onRefresh={() => suggest(r.id)} /></td>
                 <td className="min-w-[200px]"><Cell value={r.remarks} onSave={(v) => save(r.id, { remarks: v })} testid={`cell-remarks-${i}`} /></td>
                 <td className="min-w-[200px]"><Cell value={r.recruitment_request} onSave={(v) => save(r.id, { recruitment_request: v })} testid={`cell-request-${i}`} /></td>
                 <td className={`px-2 text-xs font-semibold ${INV_STYLE[r.invitation_status]}`} title={r.invitation_error || ""} data-testid={`cell-invitation-${i}`}>{r.invitation_status}{r.invitation_status === "Failed" && <span className="block font-normal text-red-500">Email setup required</span>}</td>
@@ -110,7 +124,7 @@ export default function Leads() {
                 </td>
               </tr>
             ))}
-            {!rows.length && <tr><td colSpan={12} className="p-8 text-center text-[#64748B]">No companies found.</td></tr>}
+            {!rows.length && <tr><td colSpan={13} className="p-8 text-center text-[#64748B]">No companies found.</td></tr>}
           </tbody>
         </table>
       </div>

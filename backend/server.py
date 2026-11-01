@@ -15,14 +15,17 @@ from email.header import Header
 from urllib.parse import urlencode, urlparse
 
 import httpx
+import bcrypt
+import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File, Form
 from fastapi.responses import RedirectResponse, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 
 from seed import TEMPLATES, KB_SEED, JNF_URL
+import jev
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -32,6 +35,18 @@ db = client[os.environ["DB_NAME"]]
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ["ADMIN_EMAILS"].split(",") if e.strip()}
 OFFICIAL_EMAIL = os.environ["OFFICIAL_GOOGLE_EMAIL"].lower()
 LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
+ADMIN_EMAIL = os.environ["ADMIN_EMAIL"].strip().lower()
+ADMIN_EMAILS.add(ADMIN_EMAIL)
+USER_PROJ = {"_id": 0, "password_hash": 0}
+AI_MODELS = {"claude": ("anthropic", "claude-sonnet-5-5", "Claude Sonnet 5.5"),
+             "gpt": ("openai", "gpt-5.6-terra", "ChatGPT (GPT-5.6 Terra)"),
+             "gemini": ("gemini", "gemini-3.1-pro-preview", "Gemini 3.1 Pro")}
+STORAGE_URL = ((os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com").rstrip("/") + "/objstore/api/v1/storage"
+APP_NAME = "manit-tp"
+ALLOWED_FILES = {"pdf": "application/pdf", "doc": "application/msword",
+                 "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                 "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
+MAX_FILE = 15 * 1024 * 1024
 
 app = FastAPI()
 api = APIRouter(prefix="/api")
@@ -118,7 +133,7 @@ async def get_admin(request: Request):
         exp = exp.replace(tzinfo=timezone.utc)
     if exp < datetime.now(timezone.utc):
         raise HTTPException(401, "Session expired")
-    user = await db.users.find_one({"user_id": s["user_id"]}, NO_ID)
+    user = await db.users.find_one({"user_id": s["user_id"]}, USER_PROJ)
     if not user or user["email"].lower() not in ADMIN_EMAILS:
         raise HTTPException(403, "Not authorised for Admin access")
     return user
@@ -152,7 +167,7 @@ async def auth_session(body: dict, response: Response):
     response.set_cookie("session_token", d["session_token"], httponly=True, secure=True,
                         samesite="none", path="/", max_age=7 * 24 * 3600)
     await log_activity(user_id, "auth", user_id, "login")
-    return await db.users.find_one({"user_id": user_id}, NO_ID)
+    return await db.users.find_one({"user_id": user_id}, USER_PROJ)
 
 
 @api.get("/auth/me")
@@ -167,6 +182,137 @@ async def logout(request: Request, response: Response):
         await db.user_sessions.delete_one({"session_token": token})
     response.delete_cookie("session_token", path="/", secure=True, samesite="none")
     return {"ok": True}
+
+
+def hash_pw(p):
+    return bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
+
+
+def check_pw(p, h):
+    try:
+        return bcrypt.checkpw(p.encode(), h.encode())
+    except Exception:
+        return False
+
+
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+
+@api.post("/auth/login")
+async def password_login(body: LoginIn, request: Request, response: Response):
+    email = body.email.strip().lower()
+    ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "")).split(",")[0].strip()
+    ident = f"{ip}:{email}"
+    att = await db.login_attempts.find_one({"identifier": ident}) or {}
+    if att.get("locked_until") and att["locked_until"] > now():
+        raise HTTPException(429, "Too many failed attempts. Try again in 15 minutes.")
+    user = await db.users.find_one({"email": email}, NO_ID)
+    if not user or email not in ADMIN_EMAILS or not user.get("password_hash") or not check_pw(body.password, user["password_hash"]):
+        count = att.get("count", 0) + 1
+        upd = {"count": count, "updated_at": now()}
+        if count >= 5:
+            upd = {"count": 0, "locked_until": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()}
+        await db.login_attempts.update_one({"identifier": ident}, {"$set": upd}, upsert=True)
+        raise HTTPException(401, "Invalid email or password")
+    await db.login_attempts.delete_one({"identifier": ident})
+    token = secrets.token_urlsafe(32)
+    await db.user_sessions.insert_one({"user_id": user["user_id"], "session_token": token,
+                                       "expires_at": datetime.now(timezone.utc) + timedelta(days=7), "created_at": now()})
+    response.set_cookie("session_token", token, httponly=True, secure=True, samesite="none", path="/", max_age=7 * 24 * 3600)
+    await log_activity(user["user_id"], "auth", user["user_id"], "password_login")
+    return await db.users.find_one({"user_id": user["user_id"]}, USER_PROJ)
+
+
+@api.post("/auth/change-password")
+async def change_password(body: dict, admin=Depends(get_admin)):
+    new = body.get("new_password") or ""
+    if len(new) < 8:
+        raise HTTPException(400, "New password must be at least 8 characters")
+    user = await db.users.find_one({"user_id": admin["user_id"]})
+    if user.get("password_hash") and not check_pw(body.get("current_password") or "", user["password_hash"]):
+        raise HTTPException(400, "Current password is incorrect")
+    await db.users.update_one({"user_id": admin["user_id"]}, {"$set": {"password_hash": hash_pw(new)}})
+    await log_activity(admin["user_id"], "auth", admin["user_id"], "password_changed")
+    return {"ok": True}
+
+
+# ---------------- File storage ----------------
+storage_key = None
+
+
+def init_storage(force=False):
+    global storage_key
+    if storage_key and not force:
+        return storage_key
+    r = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": LLM_KEY}, timeout=30)
+    r.raise_for_status()
+    storage_key = r.json()["storage_key"]
+    return storage_key
+
+
+def put_object(path, data, ctype):
+    r = requests.put(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": init_storage(), "Content-Type": ctype}, data=data, timeout=120)
+    if r.status_code == 404:
+        r = requests.put(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": init_storage(True), "Content-Type": ctype}, data=data, timeout=120)
+    r.raise_for_status()
+    return r.json()
+
+
+def get_object(path):
+    r = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": init_storage()}, timeout=60)
+    r.raise_for_status()
+    return r.content
+
+
+@api.post("/admin/kb/{kid}/file")
+async def upload_kb_file(kid: str, file: UploadFile = File(...), admin=Depends(get_admin)):
+    entry = await db.knowledge_base.find_one({"id": kid}, NO_ID)
+    if not entry:
+        raise HTTPException(404, "Entry not found")
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
+    if ext not in ALLOWED_FILES:
+        raise HTTPException(400, "Allowed file types: PDF, DOC, DOCX, PNG, JPG, WEBP")
+    data = await file.read()
+    if len(data) > MAX_FILE:
+        raise HTTPException(400, "File too large (max 15 MB)")
+    try:
+        res = await asyncio.to_thread(put_object, f"{APP_NAME}/kb/{kid}/{uuid.uuid4()}.{ext}", data, ALLOWED_FILES[ext])
+    except Exception as e:
+        raise HTTPException(502, f"File storage error: {e}")
+    if entry.get("file_id"):
+        await db.files.update_one({"id": entry["file_id"]}, {"$set": {"is_deleted": True}})
+    fid = nid()
+    await db.files.insert_one({"id": fid, "storage_path": res["path"], "original_filename": file.filename, "content_type": ALLOWED_FILES[ext],
+                               "size": res.get("size", len(data)), "kb_id": kid, "is_deleted": False, "created_at": now()})
+    await db.knowledge_base.update_one({"id": kid}, {"$set": {"file_id": fid, "file_name": file.filename, "updated_at": now()}})
+    await log_activity(admin["user_id"], "knowledge_base", kid, "file_uploaded", entry.get("file_name"), file.filename)
+    return await db.knowledge_base.find_one({"id": kid}, NO_ID)
+
+
+@api.delete("/admin/kb/{kid}/file")
+async def remove_kb_file(kid: str, admin=Depends(get_admin)):
+    entry = await db.knowledge_base.find_one({"id": kid}, NO_ID)
+    if not entry or not entry.get("file_id"):
+        raise HTTPException(404, "No file attached")
+    await db.files.update_one({"id": entry["file_id"]}, {"$set": {"is_deleted": True}})
+    await db.knowledge_base.update_one({"id": kid}, {"$set": {"file_id": None, "file_name": None, "updated_at": now()}})
+    await log_activity(admin["user_id"], "knowledge_base", kid, "file_removed", entry.get("file_name"))
+    return {"ok": True}
+
+
+@api.get("/files/{fid}")
+async def download_file(fid: str, request: Request):
+    rec = await db.files.find_one({"id": fid, "is_deleted": False}, NO_ID)
+    if not rec:
+        raise HTTPException(404, "File not found")
+    kb = await db.knowledge_base.find_one({"id": rec.get("kb_id"), "file_id": fid}, NO_ID)
+    if not kb or not kb.get("published"):
+        await get_admin(request)
+    data = await asyncio.to_thread(get_object, rec["storage_path"])
+    safe = re.sub(r'[^A-Za-z0-9._ -]', "_", rec["original_filename"])
+    return Response(content=data, media_type=rec["content_type"], headers={"Content-Disposition": f'inline; filename="{safe}"'})
 
 
 # ---------------- Settings & templates ----------------
@@ -504,6 +650,8 @@ async def update_lead(lead_id: str, body: dict, admin=Depends(get_admin)):
         await db.company_leads.update_one({"id": lead_id}, {"$set": {**changed, "updated_at": now()}})
         for k, v in changed.items():
             await log_activity(admin["user_id"], "company_lead", lead_id, f"update:{k}", lead.get(k), v)
+        if {"remarks", "recruitment_request"} & changed.keys():
+            await store_status_suggestion(lead_id)
     inv = None
     new_status = body.get("interest_status")
     if new_status and new_status != lead["interest_status"]:
@@ -511,6 +659,18 @@ async def update_lead(lead_id: str, body: dict, admin=Depends(get_admin)):
         if new_status == "Hot":
             inv = await send_invitation(lead_id)
     return {"lead": await db.company_leads.find_one({"id": lead_id}, NO_ID), "invitation": inv}
+
+
+@api.post("/admin/leads/{lead_id}/suggest-status")
+async def suggest_lead_status(lead_id: str, admin=Depends(get_admin)):
+    lead = await db.company_leads.find_one({"id": lead_id}, NO_ID)
+    if not lead:
+        raise HTTPException(404, "Company not found")
+    if not (lead.get("remarks") or lead.get("recruitment_request")):
+        raise HTTPException(400, "Add remarks or a recruitment request first")
+    sug = await jev.suggest_status(lead)
+    await db.company_leads.update_one({"id": lead_id}, {"$set": {"ai_status_suggestion": sug}})
+    return sug
 
 
 @api.delete("/admin/leads/{lead_id}")
@@ -624,6 +784,20 @@ def validate_request(kind, b):
         raise HTTPException(400, "Date cannot be in the past")
 
 
+async def screen_and_store(kind, doc):
+    d = doc.get("requested_date") or doc.get("preferred_date")
+    days = (date_cls.fromisoformat(d) - datetime.now(IST).date()).days
+    res = await jev.screen_request(doc, kind, days)
+    res["junk_flag"] = res.get("junk_probability", 0) >= 0.8
+    await db[coll_of(kind)].update_one({"id": doc["id"]}, {"$set": {"ai_screen": res}})
+
+
+async def store_status_suggestion(lead_id):
+    lead = await db.company_leads.find_one({"id": lead_id}, NO_ID)
+    if lead and (lead.get("remarks") or lead.get("recruitment_request")):
+        await db.company_leads.update_one({"id": lead_id}, {"$set": {"ai_status_suggestion": await jev.suggest_status(lead)}})
+
+
 async def create_request(kind, b):
     validate_request(kind, b)
     lead, _ = await find_or_create_lead(b)
@@ -645,6 +819,7 @@ async def create_request(kind, b):
                "meeting_link": b.get("meeting_link", ""), "status": "Pending"}
     await db[coll_of(kind)].insert_one(dict(doc))
     await log_activity("public", coll_of(kind), doc["id"], "created", None, doc["status"])
+    asyncio.create_task(screen_and_store(kind, doc))
     return doc
 
 
@@ -828,10 +1003,12 @@ async def do_action(kind, rid, a: ActionIn, admin_id):
 
 
 @api.get("/admin/req/{kind}")
-async def list_requests(kind: str, status: str = "", admin=Depends(get_admin)):
+async def list_requests(kind: str, status: str = "", sort: str = "", admin=Depends(get_admin)):
     if kind not in ("visits", "calls"):
         raise HTTPException(404)
     f = {"status": status} if status else {}
+    if sort == "urgency":
+        return await db[coll_of(kind)].find(f, NO_ID).sort([("ai_screen.urgency_score", -1), ("created_at", -1)]).to_list(1000)
     return await db[coll_of(kind)].find(f, NO_ID).sort("created_at", -1).to_list(1000)
 
 
@@ -951,13 +1128,23 @@ async def read_settings(admin=Depends(get_admin)):
 async def write_settings(body: dict, admin=Depends(get_admin)):
     old = await get_settings()
     upd = {}
+    if "chat_model" in body:
+        if body["chat_model"] not in AI_MODELS:
+            raise HTTPException(400, "Unknown AI model")
+        upd["chat_model"] = body["chat_model"]
     if "jnf_url" in body:
         if not str(body["jnf_url"]).startswith("https://"):
             raise HTTPException(400, "JNF URL must start with https://")
         upd["jnf_url"] = body["jnf_url"]
     await db.settings.update_one({"key": "app"}, {"$set": upd})
-    await log_activity(admin["user_id"], "settings", "app", "updated", old.get("jnf_url"), upd.get("jnf_url"))
+    await log_activity(admin["user_id"], "settings", "app", "updated", {k: old.get(k) for k in upd}, upd)
     return await get_settings()
+
+
+@api.get("/admin/ai-models")
+async def ai_models(admin=Depends(get_admin)):
+    return {"current": (await get_settings()).get("chat_model", "claude"),
+            "models": [{"key": k, "provider": v[0], "model": v[1], "label": v[2]} for k, v in AI_MODELS.items()]}
 
 
 @api.get("/admin/activity")
@@ -1011,7 +1198,7 @@ async def kb_delete(kid: str, admin=Depends(get_admin)):
 @api.get("/public/kb")
 async def public_kb():
     return await db.knowledge_base.find({"published": True}, {"_id": 0, "id": 1, "title": 1, "category": 1, "content": 1,
-                                                              "source_url": 1, "is_resource": 1, "last_verified_at": 1}).to_list(500)
+                                                              "source_url": 1, "is_resource": 1, "last_verified_at": 1, "file_id": 1, "file_name": 1}).to_list(500)
 
 
 @api.get("/public/config")
@@ -1120,6 +1307,12 @@ async def run_action(act, sid):
         if t == "register_interest":
             if not act.get("company_name") or not act.get("hr_name") or not EMAIL_RE.match(act.get("work_email") or ""):
                 return "I need your company name, your name and a valid official work email to proceed."
+            msgs = [m["content"] for m in await db.chat_messages.find({"session_id": sid, "role": "user"}, NO_ID).sort("ts", 1).to_list(50)]
+            label, conf = await jev.classify_interest(msgs)
+            if label is not None and not (label == "explicit_interest" and conf >= 0.6):
+                lead, _ = await find_or_create_lead(act)
+                return ("Thank you, your details are noted. Would your organization be interested in participating in the "
+                        "MANIT Bhopal campus recruitment process for the 2026–27 session?")
             lead, prev = await find_or_create_lead(act, status="Hot")
             if prev and prev != "Hot":
                 await set_status(lead, "Hot", "system:manit-connect")
@@ -1171,7 +1364,7 @@ async def chat(body: ChatIn):
     await db.chat_messages.insert_one({"session_id": sid, "role": "user", "content": msg, "ts": now()})
     transcript = "\n".join(f"{'HR' if h['role'] == 'user' else 'MANIT Connect'}: {h['content']}" for h in hist[-20:])
     prompt = f"Conversation so far:\n{transcript or '(start)'}\n\nHR: {msg}\n\nReply as MANIT Connect."
-    llm = LlmChat(api_key=LLM_KEY, session_id=f"{sid}-{nid()}", system_message=await system_prompt()).with_model("anthropic", "claude-sonnet-5-5")
+    llm = LlmChat(api_key=LLM_KEY, session_id=f"{sid}-{nid()}", system_message=await system_prompt()).with_model(*AI_MODELS.get((await get_settings()).get("chat_model"), AI_MODELS["claude"])[:2])
 
     async def gen():
         full = ""
@@ -1215,6 +1408,18 @@ async def startup():
     await db.visit_requests.create_index("id", unique=True)
     await db.call_requests.create_index("id", unique=True)
     await db.settings.update_one({"key": "app"}, {"$setOnInsert": {"key": "app", "jnf_url": JNF_URL}}, upsert=True)
+    await db.users.create_index("email", unique=True)
+    await db.login_attempts.create_index("identifier")
+    admin = await db.users.find_one({"email": ADMIN_EMAIL})
+    if not admin:
+        await db.users.insert_one({"user_id": f"user_{uuid.uuid4().hex[:12]}", "email": ADMIN_EMAIL, "name": "Admin",
+                                   "password_hash": hash_pw(os.environ["ADMIN_PASSWORD"]), "created_at": now()})
+    elif not admin.get("password_hash"):
+        await db.users.update_one({"email": ADMIN_EMAIL}, {"$set": {"password_hash": hash_pw(os.environ["ADMIN_PASSWORD"])}})
+    try:
+        await asyncio.to_thread(init_storage)
+    except Exception as e:
+        logger.error("Storage init failed: %s", e)
     for key, t in TEMPLATES.items():
         await db.email_templates.update_one({"key": key}, {"$setOnInsert": {"key": key, **t, "updated_at": now()}}, upsert=True)
     if await db.knowledge_base.count_documents({}) == 0:

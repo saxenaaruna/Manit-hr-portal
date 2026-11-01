@@ -1,9 +1,18 @@
-import { useLocation, Link } from "react-router-dom";
+import { useState } from "react";
+import { useLocation, Link, useNavigate } from "react-router-dom";
+import { api, errMsg } from "../lib/api";
 import { ShieldCheck, ArrowLeft } from "lucide-react";
 
 export default function AdminLogin() {
   const location = useLocation();
-  const error = location.state?.error;
+  const navigate = useNavigate();
+  const [error, setError] = useState(location.state?.error);
+  const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault(); setBusy(true); setError(null);
+    try { const r = await api.post("/auth/login", { email, password }); navigate("/admin", { replace: true, state: { user: r.data } }); }
+    catch (err) { setError(errMsg(err)); } finally { setBusy(false); }
+  };
   const login = () => {
     // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
     const redirectUrl = window.location.origin + "/admin";
@@ -26,7 +35,13 @@ export default function AdminLogin() {
           <h1 className="font-serif-d text-2xl text-[#0B2545]">Admin Login</h1>
           <p className="mt-2 text-sm text-[#64748B]">Access is restricted to authorised MANIT T&P administrators. No public sign-up.</p>
           {error && <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700" data-testid="login-error">{error}</p>}
-          <button onClick={login} className="btn-primary mt-6 w-full justify-center py-3" data-testid="google-login-btn">Continue with Google</button>
+          <form onSubmit={submit} className="mt-6 space-y-3" data-testid="password-login-form">
+            <input type="email" required placeholder="Email" className="field" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="login-email" />
+            <input type="password" required placeholder="Password" className="field" value={password} onChange={(e) => setPassword(e.target.value)} data-testid="login-password" />
+            <button className="btn-primary w-full justify-center py-3" disabled={busy} data-testid="login-submit-btn">{busy ? "Signing in…" : "Sign in"}</button>
+          </form>
+          <div className="my-4 flex items-center gap-3 text-xs text-[#64748B]"><span className="h-px flex-1 bg-[#D6E4F7]" />or<span className="h-px flex-1 bg-[#D6E4F7]" /></div>
+          <button onClick={login} className="btn-outline w-full justify-center py-3" data-testid="google-login-btn">Continue with Google</button>
           <Link to="/" className="mt-6 inline-flex items-center gap-1 text-sm text-[#1D4ED8] hover:underline" data-testid="back-to-portal-link"><ArrowLeft className="h-4 w-4" />Back to portal</Link>
         </div>
       </div>

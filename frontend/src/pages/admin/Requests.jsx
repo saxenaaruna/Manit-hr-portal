@@ -17,11 +17,22 @@ const slot = (r, v) => v
   : (r.approved_date ? `${r.approved_date} ${r.approved_time} (${r.approved_duration}m)` : null);
 const requested = (r, v) => v ? `${r.requested_date} ${r.requested_start_time}–${r.requested_end_time}` : `${r.preferred_date} ${r.preferred_time} (${r.duration}m)`;
 
+const URG = { low: "bg-slate-100 text-slate-600", medium: "bg-[#DBEAFE] text-[#1D4ED8]", high: "bg-amber-100 text-amber-800", critical: "bg-red-100 text-red-700" };
+const AiBadges = ({ s, i, kind }) => {
+  if (!s?.ai_classified) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-1 font-sans">
+      <span className={`rounded px-1.5 text-[10px] font-semibold ${URG[s.urgency_label]}`} data-testid={`${kind}-urgency-${i}`}>Urgency: {s.urgency_label}</span>
+      {s.junk_flag && <span className="rounded bg-red-600 px-1.5 text-[10px] font-semibold text-white" data-testid={`${kind}-junk-${i}`}>Possible junk</span>}
+    </div>
+  );
+};
+
 export default function Requests({ kind }) {
   const v = kind === "visits";
-  const [rows, setRows] = useState([]); const [status, setStatus] = useState("");
+  const [rows, setRows] = useState([]); const [status, setStatus] = useState(""); const [byUrgency, setByUrgency] = useState(false);
   const [act, setAct] = useState(null); const [manual, setManual] = useState(false);
-  const load = useCallback(() => api.get(`/admin/req/${kind}`, { params: { status } }).then((r) => setRows(r.data)), [kind, status]);
+  const load = useCallback(() => api.get(`/admin/req/${kind}`, { params: { status, sort: byUrgency ? "urgency" : "" } }).then((r) => setRows(r.data)), [kind, status, byUrgency]);
   useEffect(() => { load(); }, [load]);
   const quick = async (r, action, extra = {}) => {
     try { const d = (await api.post(`/admin/req/${kind}/${r.id}/action`, { action, ...extra })).data; d.item ? reportResult(d) : null; load(); }
@@ -36,6 +47,7 @@ export default function Requests({ kind }) {
       </PageHead>
       <div className="mb-4 flex flex-wrap gap-1">
         {["", ...CFG[kind].statuses].map((s) => <button key={s} onClick={() => setStatus(s)} className={`rounded px-3 py-1.5 text-xs ${status === s ? "bg-[#2563EB] text-white" : "border border-[#C9D8F0] bg-white text-[#123B70]"}`} data-testid={`status-filter-${s || "all"}`}>{s || "All"}</button>)}
+        <label className="ml-auto flex items-center gap-2 text-xs text-[#123B70]"><input type="checkbox" checked={byUrgency} onChange={(e) => setByUrgency(e.target.checked)} data-testid="sort-urgency-toggle" />Sort by AI urgency</label>
       </div>
       <div className="overflow-x-auto rounded-lg border border-[#D6E4F7] bg-white">
         <table className="w-full min-w-[1100px] text-sm" data-testid={`${kind}-table`}>
@@ -43,7 +55,7 @@ export default function Requests({ kind }) {
           <tbody>
             {rows.map((r, i) => (
               <tr key={r.id} className="border-t border-[#EEF3FB] align-top" data-testid={`${kind}-row-${i}`}>
-                <td className="px-3 py-2 font-mono text-xs">{r.id}<div className="font-sans text-[10px] text-[#64748B]">{fmt(r.created_at)}</div></td>
+                <td className="px-3 py-2 font-mono text-xs">{r.id}<div className="font-sans text-[10px] text-[#64748B]">{fmt(r.created_at)}</div><AiBadges s={r.ai_screen} i={i} kind={kind} /></td>
                 <td className="px-3 py-2"><p className="font-medium">{r.company_name}</p><p className="text-xs text-[#64748B]">{r.hr_name} · {r.work_email}{r.contact_number ? ` · ${r.contact_number}` : ""}</p>{r.admin_notes && <p className="mt-1 text-xs italic text-[#123B70]">Note: {r.admin_notes}</p>}</td>
                 <td className="px-3 py-2 text-xs">{v ? r.visit_purpose : `${r.discussion_purpose || "—"} · ${r.call_mode}`}{r.meeting_link && <a href={r.meeting_link} target="_blank" rel="noreferrer" className="block text-[#1D4ED8]">Meeting link</a>}{r.remarks && <p className="text-[#64748B]">“{r.remarks}”</p>}</td>
                 <td className="px-3 py-2 text-xs">{requested(r, v)}{r.proposed_date && <p className="text-amber-700">Proposed: {r.proposed_date} {r.proposed_start_time}–{r.proposed_end_time}</p>}</td>

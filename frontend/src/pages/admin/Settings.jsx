@@ -21,6 +21,11 @@ export default function Settings() {
   const connect = async () => { try { window.location.href = (await api.get("/admin/google/connect")).data.url; } catch (e) { toast.error(errMsg(e)); } };
   const disconnect = async () => { if (!window.confirm("Disconnect Google? Emails and calendar sync will stop.")) return; await api.post("/admin/google/disconnect"); toast.success("Disconnected"); load(); };
   const check = async () => { try { await api.post("/admin/google/check"); toast.success("Connection OK"); } catch (e) { toast.error(errMsg(e)); } load(); };
+  const [ai, setAi] = useState(null);
+  const [pw, setPw] = useState({ current_password: "", new_password: "" });
+  useEffect(() => { api.get("/admin/ai-models").then((r) => setAi(r.data)); }, []);
+  const setModel = async (key) => { try { await api.put("/admin/settings", { chat_model: key }); setAi({ ...ai, current: key }); toast.success("MANIT Connect model updated"); } catch (e) { toast.error(errMsg(e)); } };
+  const changePw = async (e) => { e.preventDefault(); try { await api.post("/auth/change-password", pw); toast.success("Password changed"); setPw({ current_password: "", new_password: "" }); } catch (err) { toast.error(errMsg(err)); } };
   if (!s) return null;
   return (
     <div>
@@ -41,6 +46,21 @@ export default function Settings() {
           </div>
           <p className="text-xs text-[#64748B]">Sign in as <b>{s.official_email}</b>. Any other account is rejected and never used.</p>
         </div>
+        <div className="card space-y-3 p-6" data-testid="ai-model-card">
+          <p className="font-serif-d text-xl text-[#0B2545]">MANIT Connect AI model</p>
+          <p className="text-xs text-[#64748B]">Applies to new chatbot replies immediately. Uses the Emergent Universal Key.</p>
+          {ai?.models.map((m) => (
+            <label key={m.key} className={`flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm ${ai.current === m.key ? "border-[#2563EB] bg-[#EFF6FF]" : "border-[#D6E4F7]"}`}>
+              <input type="radio" name="model" checked={ai.current === m.key} onChange={() => setModel(m.key)} data-testid={`ai-model-${m.key}`} />{m.label}<span className="ml-auto font-mono text-[11px] text-[#64748B]">{m.model}</span>
+            </label>
+          ))}
+        </div>
+        <form onSubmit={changePw} className="card space-y-3 p-6" data-testid="change-password-card">
+          <p className="font-serif-d text-xl text-[#0B2545]">Admin password</p>
+          <input type="password" className="field" placeholder="Current password" value={pw.current_password} onChange={(e) => setPw({ ...pw, current_password: e.target.value })} data-testid="current-password" />
+          <input type="password" className="field" placeholder="New password (min 8 characters)" value={pw.new_password} onChange={(e) => setPw({ ...pw, new_password: e.target.value })} data-testid="new-password" />
+          <button className="btn-primary" data-testid="change-password-btn">Change password</button>
+        </form>
         <div className="card space-y-3 p-6 text-sm" data-testid="google-setup-card">
           <p className="font-serif-d text-xl text-[#0B2545]">Google Cloud setup</p>
           <ol className="list-decimal space-y-1.5 pl-5">
