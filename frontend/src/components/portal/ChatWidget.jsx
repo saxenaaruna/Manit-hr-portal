@@ -10,7 +10,7 @@ export default function ChatWidget({ open, setOpen }) {
   const [typing, setTyping] = useState(false);
   const sid = useRef(`s_${Math.random().toString(36).slice(2)}${Date.now()}`);
   const end = useRef(null);
-  useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [msgs, typing]);
+  useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, typing]);
 
   const update = (fn) => setMsgs((m) => { const c = [...m]; c[c.length - 1] = fn(c[c.length - 1]); return c; });
   const send = async (e) => {
@@ -55,7 +55,7 @@ export default function ChatWidget({ open, setOpen }) {
           </div>
           <div className="flex-1 space-y-3 overflow-y-auto bg-[#EFF6FF] p-4" data-testid="chat-messages">
             {msgs.map((m, i) => {
-              const text = m.role === "assistant" ? m.text.split("<action")[0] : m.text;
+              const text = m.role === "assistant" ? m.text.split("<action")[0].trim() : m.text;
               if (m.role === "assistant" && !text && typing && i === msgs.length - 1) return null;
               return (
                 <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>

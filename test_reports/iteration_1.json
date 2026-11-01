@@ -1,0 +1,34 @@
+{
+  "summary": "Single lightweight E2E pass. Backend: 8/8 pytest pass (unauth 401, cookie+bearer auth, leads CRUD/remarks no-email/Warm->Hot Failed invite with clear OAuth msg/Hot->Warm->Hot/manual resend new log, visit approve + 409 overlap + calendar, call approve + reschedule -> Rescheduled + calendar slot, stats == DB, chatbot register_interest -> Hot lead). Frontend: portal hero, 4 resource links, head photo, LinkedIn links (target _blank), visit & call forms return VR-/CR- IDs; admin dashboard/leads/visits work with session cookie. CRITICAL bug found & fixed: opening chat widget crashed the whole portal ('destroy is not a function').",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ChatWidget", "issue": "FIXED by tester: useEffect(() => end.current?.scrollIntoView(...)) implicitly returned the scrollIntoView value as cleanup; newer Chromium returns a Promise from scroll APIs, so React called it as destroy() -> runtime crash of whole page on opening chat. Wrapped body in braces. Same pattern fixed in Leads.jsx Cell useEffect.", "selector": "[data-testid=chat-open-btn]", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin Leads", "issues": ["Search icon overlaps the typed text in leads-search (pl-8 seems overridden by .field padding)", "leads-sort select stretches full width (w-auto overridden by .field width:100%)"]},
+      {"screen": "Chat widget", "issues": ["Assistant bubble that preceded an <action> block keeps trailing blank lines (text before '<action' not trimmed on frontend) - extra empty space in bubble"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_manit_e2e.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Avoid implicit-return useEffect bodies anywhere (already fixed in ChatWidget.jsx and Leads.jsx)",
+    "Fix leads-search icon overlap and leads-sort full-width select",
+    "Trim assistant text before <action in ChatWidget render"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1235 lines - split into routers (auth, leads, requests, email, kb, chat)",
+    "Endpoints accept raw dict bodies (leads, kb, templates, settings, public visits/calls) instead of Pydantic models",
+    "Admin auth cookie: earlier /admin->/admin/login redirect was a cookie-setup artefact. Works when cookie is added with domain=<preview host>, path=/, secure=True, sameSite=None (verified). Not a real bug.",
+    "Hot->Warm->Hot re-attempts invitation while never successfully sent (by design: success_at None); duplicates prevented only after a successful send - logic looks correct but could not be verified with real Gmail"
+  ],
+  "updated_files": ["/app/frontend/src/components/portal/ChatWidget.jsx", "/app/frontend/src/pages/admin/Leads.jsx", "/app/backend/tests/test_manit_e2e.py"],
+  "success_rate": {"backend": "100%", "frontend": "100% after fix (chat crashed before fix)"},
+  "test_credentials": "session_token=test_session_admin (user_testadmin, saxena.aroona@gmail.com) exists in DB; /app/memory/test_credentials.md is EMPTY (only header) and /app/auth_testing.md is missing - please populate.",
+  "seed_data_creation": "Created TEST-prefixed leads (TEST Lead*, TEST Visit*, TEST Call*, TEST Chat Corp*, TEST UI*, TEST UIChat*), visits/calls in 2027 dates; VR-177793 approved via UI.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest backend/tests/test_manit_e2e.py with REACT_APP_BACKEND_URL exported. System date is Nov 2026. Gmail/Calendar not configured -> Failed / Not Synced is expected. For Playwright admin, add cookie with secure+sameSite None+domain.",
+  "rca of the issue": "Chat crash: arrow-function useEffect implicitly returned scrollIntoView() result; Chromium now returns a Promise -> React treats non-function return as cleanup and throws 'destroy is not a function' on next effect run. Repro: open portal, click chat-open-btn. Mitigation: use block body in effects."
+}

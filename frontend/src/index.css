@@ -24,11 +24,14 @@ body {
 
 .font-serif-d { font-family: 'Source Serif 4', serif; }
 
+@layer components {
 .btn-primary { @apply inline-flex items-center gap-2 rounded-md bg-[#1D4ED8] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#123B70] disabled:opacity-50; }
 .btn-outline { @apply inline-flex items-center gap-2 rounded-md border border-[#BFD3F5] bg-white px-3 py-1.5 text-sm font-medium text-[#123B70] transition-colors hover:bg-[#DBEAFE] disabled:opacity-50; }
 .field { @apply w-full rounded-md border border-[#C9D8F0] bg-white px-3 py-2 text-sm text-[#172B4D] outline-none transition-colors focus:border-[#2563EB] focus:ring-2 focus:ring-[#DBEAFE]; }
 .lbl { @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-[#64748B]; }
 .card { @apply rounded-lg border border-[#D6E4F7] bg-white; }
+
+}
 
 .sheet td, .sheet th { border: 1px solid #D6E4F7; }
 .sheet input.cell, .sheet select.cell { width: 100%; background: transparent; border: 0; padding: 6px 8px; font-size: 13px; outline: none; }

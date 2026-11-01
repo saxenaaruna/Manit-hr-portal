@@ -19,7 +19,7 @@ const BLANK = { company_name: "", hr_name: "", contact_number: "", work_email: "
 
 const Cell = ({ value, onSave, testid, type = "text" }) => {
   const [v, setV] = useState(value || "");
-  useEffect(() => setV(value || ""), [value]);
+  useEffect(() => { setV(value || ""); }, [value]);
   return <input className="cell" type={type} value={v} onChange={(e) => setV(e.target.value)} onBlur={() => v !== (value || "") && onSave(v)} onKeyDown={(e) => e.key === "Enter" && e.target.blur()} data-testid={testid} />;
 };
 
