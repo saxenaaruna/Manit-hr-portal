@@ -1116,6 +1116,21 @@ async def retry_email(eid: str, admin=Depends(get_admin)):
     return res
 
 
+@api.post("/admin/emails/test-invitation")
+async def test_invitation(body: dict, admin=Depends(get_admin)):
+    to = (body.get("to") or admin["email"]).strip()
+    if not EMAIL_RE.match(to):
+        raise HTTPException(400, "Invalid email address")
+    tpl = await get_template("invitation")
+    vals = {"COMPANY_NAME": "TEST Company", "HR_NAME": "Test", "JNF_URL": (await get_settings()).get("jnf_url", JNF_URL)}
+    log = await dispatch_email(to, "[TEST] " + render(tpl["subject"], vals), render(tpl["body"], vals), "Test Invitation",
+                               company_name="TEST (no company record)")
+    await log_activity(admin["user_id"], "email", log["id"], "test_invitation", None, log["delivery_status"])
+    if log["delivery_status"] == "Sent":
+        return {"ok": True, "message": f"Test invitation submitted to Gmail for {to} (message ID {log['provider_message_id']}). Check that inbox."}
+    return {"ok": False, "message": f"Test invitation failed: {log['error']}"}
+
+
 @api.post("/admin/emails/manual")
 async def manual_email(body: dict, admin=Depends(get_admin)):
     to = (body.get("to") or "").strip()

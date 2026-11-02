@@ -21,6 +21,13 @@ export default function Settings() {
   const connect = async () => { try { window.location.href = (await api.get("/admin/google/connect")).data.url; } catch (e) { toast.error(errMsg(e)); } };
   const disconnect = async () => { if (!window.confirm("Disconnect Google? Emails and calendar sync will stop.")) return; await api.post("/admin/google/disconnect"); toast.success("Disconnected"); load(); };
   const check = async () => { try { await api.post("/admin/google/check"); toast.success("Connection OK"); } catch (e) { toast.error(errMsg(e)); } load(); };
+  const [testTo, setTestTo] = useState("");
+  const [sending, setSending] = useState(false);
+  const sendTest = async () => {
+    setSending(true);
+    try { const r = (await api.post("/admin/emails/test-invitation", { to: testTo || undefined })).data; (r.ok ? toast.success : toast.error)(r.message, { duration: 10000 }); }
+    catch (e) { toast.error(errMsg(e)); } finally { setSending(false); }
+  };
   const [ai, setAi] = useState(null);
   const [pw, setPw] = useState({ current_password: "", new_password: "" });
   useEffect(() => { api.get("/admin/ai-models").then((r) => setAi(r.data)); }, []);
@@ -45,6 +52,14 @@ export default function Settings() {
             {s.connected && <button className="btn-outline text-red-600" onClick={disconnect} data-testid="google-disconnect-btn">Disconnect</button>}
           </div>
           <p className="text-xs text-[#64748B]">Sign in as <b>{s.official_email}</b>. Any other account is rejected and never used.</p>
+          <div className="border-t border-[#D6E4F7] pt-3" data-testid="test-invitation-box">
+            <p className="lbl">Send test invitation</p>
+            <div className="flex gap-2">
+              <input className="field" type="email" placeholder="Recipient (defaults to your admin email)" value={testTo} onChange={(e) => setTestTo(e.target.value)} data-testid="test-invitation-to" />
+              <button className="btn-primary whitespace-nowrap" onClick={sendTest} disabled={sending} data-testid="test-invitation-btn">{sending ? "Sending…" : "Send test"}</button>
+            </div>
+            <p className="mt-1 text-xs text-[#64748B]">Sends the current invitation template with a [TEST] subject. No company record is changed; the attempt appears in Email Communication.</p>
+          </div>
         </div>
         <div className="card space-y-3 p-6" data-testid="ai-model-card">
           <p className="font-serif-d text-xl text-[#0B2545]">MANIT Connect AI model</p>
