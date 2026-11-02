@@ -23,6 +23,7 @@ Full spec supplied by user (consolidated master build prompt): public HR portal,
 - Not built (conflict with spec / defaults): Stripe, Resend/SendGrid (all mail must come from tpwnitb@gmail.com; managed Resend can't send outreach with manit.ac.in links), Twilio SMS, ElevenLabs/TTS/STT, Perplexity, image/video generation
 
 ## Pending configuration
+- Iteration 3: placement brochure PDF attached (downloaded from manit.ac.in); JNF Google Doc is private (401) so not attached — admin must upload; junk auto-hide (Junk review tab, Genuine/Junk actions); dashboard critical-urgency banner with dismiss; GOOGLE_REDIRECT_URI updated to manit-hr-portal--93wuv0i1 preview domain
 - GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET (redirect URI env already set for preview; update GOOGLE_REDIRECT_URI for production domain)
 - Internship KB entry is unpublished pending verification
 

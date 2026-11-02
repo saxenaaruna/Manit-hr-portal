@@ -985,6 +985,14 @@ async def do_action(kind, rid, a: ActionIn, admin_id):
         if ent["status"] not in ACTIVE:
             raise HTTPException(400, "Only approved items can be completed")
         upd["status"] = "Completed"
+    elif a.action in ("mark_genuine", "mark_junk"):
+        upd["junk_reviewed"] = True
+        if a.action == "mark_junk":
+            if ent["status"] not in PENDING:
+                raise HTTPException(400, "Only pending requests can be marked as junk")
+            upd.update({"status": "Rejected", "rejection_reason": "Marked as junk by admin"})
+    elif a.action == "ack_urgent":
+        upd["urgent_ack"] = True
     elif a.action == "notes":
         upd["admin_notes"] = a.notes or ""
     elif a.action == "send_confirmation":
@@ -1002,11 +1010,28 @@ async def do_action(kind, rid, a: ActionIn, admin_id):
     return {"item": await db[coll].find_one({"id": rid}, NO_ID), **res}
 
 
+JUNK_Q = {"ai_screen.junk_flag": True, "junk_reviewed": {"$ne": True}}
+
+
+@api.get("/admin/urgent")
+async def urgent_requests(admin=Depends(get_admin)):
+    f = {"status": {"$in": PENDING}, "ai_screen.urgency_label": "critical", "urgent_ack": {"$ne": True}, "$nor": [JUNK_Q]}
+    out = []
+    for kind in ("visits", "calls"):
+        async for r in db[coll_of(kind)].find(f, NO_ID).sort("created_at", -1):
+            out.append({"kind": kind, "id": r["id"], "company_name": r["company_name"], "hr_name": r["hr_name"],
+                        "purpose": r.get("visit_purpose") or r.get("discussion_purpose"), "created_at": r["created_at"],
+                        "date": r.get("requested_date") or r.get("preferred_date")})
+    junk = sum([await db[coll_of(k)].count_documents(JUNK_Q) for k in ("visits", "calls")])
+    return {"urgent": out, "junk_pending": junk}
+
+
 @api.get("/admin/req/{kind}")
-async def list_requests(kind: str, status: str = "", sort: str = "", admin=Depends(get_admin)):
+async def list_requests(kind: str, status: str = "", sort: str = "", view: str = "main", admin=Depends(get_admin)):
     if kind not in ("visits", "calls"):
         raise HTTPException(404)
     f = {"status": status} if status else {}
+    f.update(JUNK_Q if view == "junk" else {"$nor": [JUNK_Q]})
     if sort == "urgency":
         return await db[coll_of(kind)].find(f, NO_ID).sort([("ai_screen.urgency_score", -1), ("created_at", -1)]).to_list(1000)
     return await db[coll_of(kind)].find(f, NO_ID).sort("created_at", -1).to_list(1000)

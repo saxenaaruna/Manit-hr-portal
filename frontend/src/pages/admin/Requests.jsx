@@ -31,8 +31,12 @@ const AiBadges = ({ s, i, kind }) => {
 export default function Requests({ kind }) {
   const v = kind === "visits";
   const [rows, setRows] = useState([]); const [status, setStatus] = useState(""); const [byUrgency, setByUrgency] = useState(false);
+  const [view, setView] = useState("main"); const [junkCount, setJunkCount] = useState(0);
   const [act, setAct] = useState(null); const [manual, setManual] = useState(false);
-  const load = useCallback(() => api.get(`/admin/req/${kind}`, { params: { status, sort: byUrgency ? "urgency" : "" } }).then((r) => setRows(r.data)), [kind, status, byUrgency]);
+  const load = useCallback(() => {
+    api.get(`/admin/req/${kind}`, { params: { status, view, sort: byUrgency ? "urgency" : "" } }).then((r) => setRows(r.data));
+    api.get(`/admin/req/${kind}`, { params: { view: "junk" } }).then((r) => setJunkCount(r.data.length));
+  }, [kind, status, byUrgency, view]);
   useEffect(() => { load(); }, [load]);
   const quick = async (r, action, extra = {}) => {
     try { const d = (await api.post(`/admin/req/${kind}/${r.id}/action`, { action, ...extra })).data; d.item ? reportResult(d) : null; load(); }
@@ -45,6 +49,11 @@ export default function Requests({ kind }) {
       <PageHead title={CFG[kind].title} desc={v ? "Approve, reject, propose alternatives, reschedule or cancel campus visits. Confirmation emails are sent only after approval." : "Review call requests with the Head of T&P. Approval creates a calendar event and sends a confirmation."}>
         <button className="btn-primary" onClick={() => setManual(true)} data-testid="manual-create-btn">{v ? "Create visit" : "Schedule call manually"}</button>
       </PageHead>
+      <div className="mb-3 flex gap-1">
+        <button onClick={() => setView("main")} className={`rounded px-3 py-1.5 text-xs font-semibold ${view === "main" ? "bg-[#0B2545] text-white" : "border border-[#C9D8F0] bg-white text-[#123B70]"}`} data-testid="view-main">Main queue</button>
+        <button onClick={() => setView("junk")} className={`rounded px-3 py-1.5 text-xs font-semibold ${view === "junk" ? "bg-red-600 text-white" : "border border-red-200 bg-white text-red-700"}`} data-testid="view-junk">Junk review ({junkCount})</button>
+      </div>
+      {view === "junk" && <p className="mb-3 text-xs text-[#64748B]">These requests were flagged as possible junk and are hidden from the main queue. Mark each one genuine (returns it to the queue) or junk (rejects it).</p>}
       <div className="mb-4 flex flex-wrap gap-1">
         {["", ...CFG[kind].statuses].map((s) => <button key={s} onClick={() => setStatus(s)} className={`rounded px-3 py-1.5 text-xs ${status === s ? "bg-[#2563EB] text-white" : "border border-[#C9D8F0] bg-white text-[#123B70]"}`} data-testid={`status-filter-${s || "all"}`}>{s || "All"}</button>)}
         <label className="ml-auto flex items-center gap-2 text-xs text-[#123B70]"><input type="checkbox" checked={byUrgency} onChange={(e) => setByUrgency(e.target.checked)} data-testid="sort-urgency-toggle" />Sort by AI urgency</label>
@@ -64,6 +73,8 @@ export default function Requests({ kind }) {
                 <td className="px-3 py-2 text-[11px] text-[#64748B]"><p>{r.calendar_sync_status}</p><p>{r.last_email_status || ""}</p></td>
                 <td className="px-3 py-2">
                   <div className="flex flex-wrap gap-1">
+                    {view === "junk" && <button className="btn-outline px-2 py-1 text-xs text-green-700" onClick={() => quick(r, "mark_genuine")} data-testid={`${kind}-genuine-${i}`}>Genuine</button>}
+                    {view === "junk" && PENDING.includes(r.status) && <button className="btn-outline px-2 py-1 text-xs text-red-600" onClick={() => window.confirm(`Reject ${r.id} as junk?`) && quick(r, "mark_junk")} data-testid={`${kind}-mark-junk-${i}`}>Junk</button>}
                     {PENDING.includes(r.status) && <button className="btn-outline px-2 py-1 text-xs" onClick={() => setAct({ r, action: "approve" })} data-testid={`${kind}-approve-${i}`}>Approve</button>}
                     {PENDING.includes(r.status) && <button className="btn-outline px-2 py-1 text-xs" onClick={() => setAct({ r, action: "reject" })} data-testid={`${kind}-reject-${i}`}>Reject</button>}
                     {v && PENDING.includes(r.status) && <button className="btn-outline px-2 py-1 text-xs" onClick={() => setAct({ r, action: "propose_alternative" })} data-testid={`${kind}-propose-${i}`}>Propose alt.</button>}
