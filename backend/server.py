@@ -1163,10 +1163,12 @@ async def preview_template(key: str, body: dict, admin=Depends(get_admin)):
         lead = await db.company_leads.find_one({"id": body["lead_id"]}, NO_ID)
         if not lead:
             raise HTTPException(404, "Company not found")
-        vals.update({"COMPANY_NAME": lead["company_name"], "HR_NAME": lead["hr_name"]})
+        vals = {"COMPANY_NAME": lead["company_name"], "HR_NAME": lead["hr_name"], "JNF_URL": vals["JNF_URL"]}
         to = lead.get("work_email") or "(no HR email)"
+    subj = body["subject"] if body.get("subject") is not None else tpl["subject"]
+    text = body["body"] if body.get("body") is not None else tpl["body"]
     return {"from": f"Training & Placement Cell, MANIT Bhopal <{OFFICIAL_EMAIL}>", "to": to,
-            "subject": render(body.get("subject") or tpl["subject"], vals), "body": render(body.get("body") or tpl["body"], vals)}
+            "subject": render(subj, vals), "body": render(text, vals)}
 
 
 @api.put("/admin/templates/{key}")

@@ -1,0 +1,30 @@
+{
+  "summary": "Email Preview feature tested end-to-end (backend pytest + Playwright UI). All requested flows pass: Leads row-action preview, preview-send (expected Google-not-connected error toast), Lead details preview, Templates page preview of unsaved edits (invitation + visit_confirmation), no email log on preview, 401 without auth.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/admin/templates/{key}/preview", "issue": "When lead_id is given, SAMPLE_VALS (PURPOSE, APPROVED_DATE, etc.) are still merged in, while send_invitation only replaces COMPANY_NAME/HR_NAME/JNF_URL. If an admin adds e.g. [PURPOSE] to the invitation template, the preview would show 'Campus Placement Drive' but the real email would contain literal '[PURPOSE]' - preview is not 'exactly' what is sent in that edge case."},
+      {"endpoint": "POST /api/admin/templates/{key}/preview", "issue": "Uses `body.get('subject') or tpl['subject']` - if admin clears the subject/body in the editor, preview silently shows the saved version instead of the empty draft. Low impact (save rejects empty anyway)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter4_email_preview.py", "/app/test_reports/pytest/iter4.xml"],
+  "action_items": [
+    "Optional: for lead previews, build vals exactly as send_invitation does (only COMPANY_NAME/HR_NAME/JNF_URL) or share a single helper so preview == sent email",
+    "Optional: use `body.get('subject') is not None` instead of `or` to preview empty drafts faithfully"
+  ],
+  "critical_code_review_comments": [
+    "Invitation vals dict is duplicated in send_invitation, jnf_reminder, test_invitation and preview_template - extract a helper to guarantee preview parity",
+    "server.py is ~1500 lines; should be split into routers"
+  ],
+  "updated_files": ["/app/backend/tests/test_iter4_email_preview.py"],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100%"},
+  "seed_data_creation": "None. Template edits were made only in the editor (unsaved) and reverted; verified no TEST_EDIT persisted. One extra Failed invitation email log created by clicking preview-send-btn on lead row 0 (expected).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 4 covered email preview. Email log count unchanged after preview (16->16), incremented after send (16->17). Template list item testids: tpl-{key}; editor: tpl-subject, tpl-body, tpl-save-btn, tpl-preview-btn."
+}
