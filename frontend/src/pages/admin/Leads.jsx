@@ -6,6 +6,7 @@ import { PageHead } from "../../components/admin/AdminLayout";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "../../components/ui/dropdown-menu";
 import LeadDetail from "./LeadDetail";
 import ScheduleCallDialog from "./ScheduleCallDialog";
+import EmailPreview from "./EmailPreview";
 
 export const showInvite = (inv) => {
   if (!inv) return;
@@ -39,7 +40,7 @@ export default function Leads() {
   const [stats, setStats] = useState({});
   const [q, setQ] = useState(""); const [status, setStatus] = useState(""); const [sort, setSort] = useState("updated_at|desc");
   const [nw, setNw] = useState(BLANK);
-  const [detail, setDetail] = useState(null); const [callFor, setCallFor] = useState(null);
+  const [detail, setDetail] = useState(null); const [callFor, setCallFor] = useState(null); const [preview, setPreview] = useState(null);
 
   const load = useCallback(async () => {
     const [field, order] = sort.split("|");
@@ -115,6 +116,7 @@ export default function Leads() {
                     <DropdownMenuTrigger className="rounded p-1 hover:bg-[#DBEAFE]" data-testid={`row-actions-${i}`}><MoreHorizontal className="h-4 w-4" /></DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => setDetail(r.id)} data-testid={`action-details-${i}`}>View details & history</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setPreview(r)} data-testid={`action-preview-${i}`}>Preview invitation</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => invite(r.id)} data-testid={`action-invite-${i}`}>{r.invitation_success_at ? "Resend invitation" : "Send invitation"}</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setCallFor(r)} data-testid={`action-call-${i}`}>Schedule call</DropdownMenuItem>
                       <DropdownMenuSeparator />
@@ -130,6 +132,7 @@ export default function Leads() {
       </div>
       {detail && <LeadDetail id={detail} onClose={() => setDetail(null)} onChanged={load} />}
       {callFor && <ScheduleCallDialog lead={callFor} onClose={() => setCallFor(null)} />}
+      {preview && <EmailPreview lead={preview} onClose={() => setPreview(null)} onSend={() => { const id = preview.id; setPreview(null); invite(id); }} />}
     </div>
   );
 }

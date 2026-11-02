@@ -1147,6 +1147,28 @@ async def list_templates(admin=Depends(get_admin)):
     return await db.email_templates.find({}, NO_ID).to_list(50)
 
 
+SAMPLE_VALS = {"COMPANY_NAME": "Sample Company Pvt. Ltd.", "HR_NAME": "Sample HR", "PURPOSE": "Campus Placement Drive",
+               "APPROVED_DATE": "15 December 2026", "START_TIME": "10:00", "END_TIME": "13:00", "REQUEST_ID": "VR-SAMPLE",
+               "DURATION": 30, "MODE": "Google Meet", "MEETING_LINK": "To be shared", "ITEM": "campus visit"}
+
+
+@api.post("/admin/templates/{key}/preview")
+async def preview_template(key: str, body: dict, admin=Depends(get_admin)):
+    tpl = await get_template(key)
+    if not tpl:
+        raise HTTPException(404)
+    vals = {**SAMPLE_VALS, "JNF_URL": (await get_settings()).get("jnf_url", JNF_URL)}
+    to = "hr@sample-company.com"
+    if body.get("lead_id"):
+        lead = await db.company_leads.find_one({"id": body["lead_id"]}, NO_ID)
+        if not lead:
+            raise HTTPException(404, "Company not found")
+        vals.update({"COMPANY_NAME": lead["company_name"], "HR_NAME": lead["hr_name"]})
+        to = lead.get("work_email") or "(no HR email)"
+    return {"from": f"Training & Placement Cell, MANIT Bhopal <{OFFICIAL_EMAIL}>", "to": to,
+            "subject": render(body.get("subject") or tpl["subject"], vals), "body": render(body.get("body") or tpl["body"], vals)}
+
+
 @api.put("/admin/templates/{key}")
 async def update_template(key: str, body: dict, admin=Depends(get_admin)):
     old = await get_template(key)

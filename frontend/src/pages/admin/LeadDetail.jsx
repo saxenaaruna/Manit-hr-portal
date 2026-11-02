@@ -4,10 +4,12 @@ import { toast } from "sonner";
 import Modal, { Field } from "../../components/Modal";
 import { api, errMsg, fmt, STATUS_STYLE } from "../../lib/api";
 import { showInvite } from "./Leads";
+import EmailPreview from "./EmailPreview";
 
 export default function LeadDetail({ id, onClose, onChanged }) {
   const [d, setD] = useState(null);
   const [f, setF] = useState({});
+  const [preview, setPreview] = useState(false);
   const load = () => api.get(`/admin/leads/${id}`).then((r) => { setD(r.data); setF(r.data.lead); });
   useEffect(() => { load(); }, [id]); // eslint-disable-line
   const save = async () => {
@@ -33,6 +35,7 @@ export default function LeadDetail({ id, onClose, onChanged }) {
       </div>
       <div className="flex flex-wrap gap-2">
         <button className="btn-primary" onClick={save} data-testid="detail-save-btn">Save changes</button>
+        <button className="btn-outline" onClick={() => setPreview(true)} data-testid="detail-preview-btn">Preview invitation</button>
         <button className="btn-outline" onClick={invite} data-testid="detail-invite-btn">{l.invitation_success_at ? "Resend invitation" : "Send invitation"}</button>
         <button className="btn-outline" onClick={reminder} data-testid="detail-jnf-reminder-btn">Send JNF reminder</button>
       </div>
@@ -52,6 +55,7 @@ export default function LeadDetail({ id, onClose, onChanged }) {
       <History title="Email history" rows={d.emails} cols={[["email_type", "Type"], ["delivery_status", "Status"], ["provider_message_id", "Message ID"], ["created_at", "Date", fmt]]} testid="detail-emails" />
       <History title="Campus visit requests" link="/admin/visits" rows={d.visits} cols={[["id", "ID"], ["visit_purpose", "Purpose"], ["requested_date", "Requested"], ["approved_date", "Approved"], ["status", "Status"]]} />
       <History title="Call requests" link="/admin/calls" rows={d.calls} cols={[["id", "ID"], ["preferred_date", "Preferred"], ["approved_date", "Approved"], ["approved_time", "Time"], ["status", "Status"]]} />
+      {preview && <EmailPreview lead={l} onClose={() => setPreview(false)} onSend={() => { setPreview(false); invite(); }} />}
     </Modal>
   );
 }
