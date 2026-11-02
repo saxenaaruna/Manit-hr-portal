@@ -1,0 +1,17 @@
+{
+  "summary": "Short pass on Google OAuth connect + Settings 'Send test invitation'. Backend 5/5 pytest passed; UI flow verified via Playwright. Google status: configured=true, connected=false. Connect URL goes to accounts.google.com with the correct redirect_uri (https://manit-hr-portal--93wuv0i1.preview.emergentagent.com/api/oauth/google/callback), scopes openid, email, gmail.send, calendar.freebusy, calendar.events, access_type=offline, prompt=consent, login_hint=tpwnitb@gmail.com (Google sign-in NOT completed). Test invitation returns ok=false with 'Test invitation failed: Google account (tpwnitb@gmail.com) is not connected'; error toast shown; no success claimed. Logged in /admin/emails as type 'Test Invitation', status Failed, provider id '—', company 'TEST (no company record)', company_lead_id null, subject prefixed [TEST]. Unauth -> 401, invalid email -> 400.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_iter3_test_invitation.py", "/app/test_reports/pytest/pytest_iter3.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Minor: if retried from Email Communication, a 'Test Invitation' log goes through the generic retry branch. That's fine because there is no lead, but consider limiting retries to Test Invitation logs.",
+    "Minor: the test_invitation 'to' value is not lowercased (cosmetic only)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter3_test_invitation.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Two failed Test Invitation email logs created: TEST_invite@example.com and TEST_ui_invite@example.com",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Real Gmail delivery can only be verified after a human completes the Connect Google Account sign-in as tpwnitb@gmail.com. Then re-run test_iter3 expecting ok=true, status Sent and a provider_message_id. Auth: cookie or Bearer test_session_admin."
+}
